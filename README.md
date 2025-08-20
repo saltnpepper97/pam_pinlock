@@ -122,9 +122,6 @@ pinlockctl status
 
 # 🗑️ Remove existing PIN
 pinlockctl remove
-
-# 🔍 Verify a PIN (testing)
-pinlockctl verify
 ```
 
 ### 3️⃣ Security Configuration
