@@ -12,6 +12,16 @@
 
 static void die(const char *msg) { perror(msg); exit(1); }
 
+static void usage(const char *prog) {
+    printf("Usage: %s <command> [username]\n", prog);
+    printf("Commands:\n");
+    printf("  enroll, set    Set a new PIN for the user\n");
+    printf("  remove         Remove the PIN for the user\n");
+    printf("  status         Show whether a PIN is set\n");
+    printf("  help           Show this help message\n");
+    exit(0);
+}
+
 static char *get_username(int argc, char **argv) {
     if (argc >= 3 && argv[2] && *argv[2]) return strdup(argv[2]);
 
@@ -71,32 +81,35 @@ static char *prompt_hidden(const char *label) {
 }
 
 int main(int argc, char **argv) {
-    if (argc<2) return 2;
+    if (argc < 2) usage(argv[0]);
+
+    const char *cmd = argv[1];
+    if (strcmp(cmd, "help") == 0) usage(argv[0]);
 
     char *user = get_username(argc, argv);
-    if (!user) return 1;
+    if (!user) die("No username provided");
 
     char *dir = get_pinlock_dir(user);
-    if (!dir) die("cannot resolve home directory");
+    if (!dir) die("Cannot resolve home directory");
 
-    if (ensure_dir(dir) != 0) die("cannot create ~/.pinlock");
+    if (ensure_dir(dir) != 0) die("Cannot create ~/.pinlock");
 
     char path[1024];
     int n = snprintf(path, sizeof(path), "%s/%s.pin", dir, user);
-    if (n < 0 || n >= (int)sizeof(path)) die("path too long");
+    if (n < 0 || n >= (int)sizeof(path)) die("Path too long");
 
-    if (!strcmp(argv[1], "status")) {
+    if (!strcmp(cmd, "status")) {
         if (access(path, R_OK)==0) printf("PIN enrolled for %s\n", user);
         else printf("No PIN set for %s\n", user);
         free(user); return 0;
     }
 
-    if (!strcmp(argv[1], "remove")) {
+    if (!strcmp(cmd, "remove")) {
         unlink(path);  // ignore error
         free(user); return 0;
     }
 
-    if (!strcmp(argv[1], "enroll") || !strcmp(argv[1], "set")) {
+    if (!strcmp(cmd, "enroll") || !strcmp(cmd, "set")) {
         char *p1 = prompt_hidden("Enter new PIN: ");
         if (!p1 || !*p1) { free(p1); free(user); return 1; }
         char *p2 = prompt_hidden("Confirm PIN: ");
@@ -123,5 +136,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    free(user); return 2;
+    fprintf(stderr, "Unknown command: %s\n", cmd);
+    usage(argv[0]);
+    return 2;
 }
