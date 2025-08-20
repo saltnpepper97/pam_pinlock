@@ -112,6 +112,23 @@ int main(int argc, char **argv) {
     if (!strcmp(cmd, "enroll") || !strcmp(cmd, "set")) {
         char *p1 = prompt_hidden("Enter new PIN: ");
         if (!p1 || !*p1) { free(p1); free(user); return 1; }
+
+        // Require minimum 6 digits
+        if (strlen(p1) < 6) {
+            fprintf(stderr, "PIN must be at least 6 digits.\n");
+            free(p1); free(user);
+            return 1;
+        }
+
+        // Optional: check that PIN is all digits
+        for (size_t i = 0; i < strlen(p1); i++) {
+            if (p1[i] < '0' || p1[i] > '9') {
+                fprintf(stderr, "PIN must contain only digits.\n");
+                free(p1); free(user);
+                return 1;
+            }
+        }
+
         char *p2 = prompt_hidden("Confirm PIN: ");
         if (!p2 || strcmp(p1,p2)!=0) { free(p1); free(p2); free(user); return 1; }
 

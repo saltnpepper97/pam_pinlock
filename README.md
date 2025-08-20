@@ -1,17 +1,21 @@
 # 🔒 pam_pinlock
 
-A modern, secure, and stylish PIN-based authentication module for Linux, seamlessly integrated with Hyprland via hyprlock. Protect your lock screen with a PIN while keeping it visually stunning!
+A secure, PIN-based authentication module for Linux, fully compatible with PAM and integrated with Hyprland via hyprlock. Protect your lock screen with a simple, fast PIN.
 
-## Overview
+# Features
 
-pam_pinlock brings a fast, secure, and customizable PIN-based authentication experience to Linux systems. Designed to work with PAM-aware services (e.g., system login, su) and paired with hyprlock for a beautiful lock screen, it combines security with aesthetics.
+- 🛡️ **PAM Integration:** Works with system login, su and other PAM aware services
+- 🔐 **PIN Login:** Quick and memorable authentication
+- 🏋️ **Argon2 Hashing:** Industy-standard secure PIN storage
+- ⚡ **CLI Tool:** Easily add, remove or check PINs with `pinlockctl`
 
-## Features
+# Overview
 
-🛡️ PAM Integration: Works with system login, su, and other PAM-aware services.  
-🔐 PIN Authentication: Quick, simple, and memorable PIN-based login.  
-🏋️ Argon2 Hashing: Industry-standard secure hashing for your PINs.  
-⚡ Lightweight CLI: Manage PINs effortlessly using `pinlockctl`.   
+pam_pinlock lets users log in using a PIN instead of a password, combining speed, security, and convenience. It works with all PAM-aware services and enhances your lock screen with hyprlock.
+
+Secure, fast, and effortless—logging in has never been easier.
+
+---
 
 ## Prerequisites
 
