@@ -123,21 +123,6 @@ pinlockctl status
 # 🗑️ Remove existing PIN
 pinlockctl remove
 ```
-
-### 3️⃣ Security Configuration
-
-Create `/etc/pam_pinlock.conf` for advanced settings:
-```ini
-# PIN length requirements
-min_length=4
-max_length=8
-
-# Argon2 parameters
-memory_cost=65536
-time_cost=3
-parallelism=1
-```
-
 ---
 
 ## 🎮 Usage
