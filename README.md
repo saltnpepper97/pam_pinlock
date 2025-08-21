@@ -6,6 +6,7 @@
 [![PAM Compatible](https://img.shields.io/badge/PAM-compatible-orange.svg)](https://linux.die.net/man/8/pam)
 [![Hyprland](https://img.shields.io/badge/Hyprland-supported-purple.svg)](https://hyprland.org/)
 [![Security](https://img.shields.io/badge/security-Argon2-red.svg)](https://github.com/P-H-C/phc-winner-argon2)
+[![AUR](https://img.shields.io/badge/AUR-available-blue.svg)](https://aur.archlinux.org/packages/pam-pinlock)
 
 > A secure, feature-rich PIN-based authentication module for Linux with rate limiting, account lockout protection, and comprehensive configuration options. Perfect for Hyprland's hyprlock and system-wide authentication.
 
@@ -67,7 +68,25 @@ sudo pacman -S base-devel pam argon2 git
 
 ## 🚀 Installation
 
-### Quick Install
+### 📦 Arch Linux (AUR)
+
+**Using an AUR helper (yay, paru, etc.):**
+```bash
+yay -S pam-pinlock
+# or
+paru -S pam-pinlock
+```
+
+**Manual AUR installation:**
+```bash
+git clone https://aur.archlinux.org/pam-pinlock.git
+cd pam-pinlock
+makepkg -si
+```
+
+### 🔨 Build from Source
+
+**Quick Install:**
 ```bash
 # Clone the repository
 git clone https://github.com/saltnpepper97/pam_pinlock.git
@@ -83,7 +102,7 @@ sudo cp /etc/pinlock/examples/pinlock.conf /etc/pinlock.conf
 sudo nano /etc/pinlock.conf
 ```
 
-### Build Output
+**Build Output:**
 ```
 gcc -Wall -Wextra -O2 -fPIC -shared -o pam_pinlock.so pam_pinlock.c -lpam -largon2
 gcc -Wall -Wextra -O2 -fPIC -o pinlockctl pinlockctl.c -largon2
