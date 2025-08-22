@@ -72,15 +72,15 @@ sudo pacman -S base-devel pam argon2 git
 
 **Using an AUR helper (yay, paru, etc.):**
 ```bash
-yay -S pam-pinlock
+yay -S pam_pinlock
 # or
-paru -S pam-pinlock
+paru -S pam_pinlock
 ```
 
 **Manual AUR installation:**
 ```bash
-git clone https://aur.archlinux.org/pam-pinlock.git
-cd pam-pinlock
+git clone https://aur.archlinux.org/pam_pinlock.git
+cd pam_pinlock
 makepkg -si
 ```
 
