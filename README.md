@@ -362,10 +362,7 @@ echo "auth sufficient $(pwd)/pam_pinlock.so debug" | sudo tee /tmp/test-pam
 ```
 
 ### 🎯 Areas for Contribution
-- Additional authentication methods
 - GUI PIN entry tools
-- Enhanced logging and monitoring
-- Performance optimizations
 - Platform compatibility
 - Documentation improvements
 
