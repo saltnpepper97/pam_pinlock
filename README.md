@@ -165,10 +165,10 @@ auth    sufficient  pam_pinlock.so
 auth    include     system-auth
 ```
 
-**For system-wide authentication** (`/etc/pam.d/common-auth`):
+**For system-wide authentication** (`/etc/pam.d/common-auth` or `/etc/pam.d/system-auth`):
 ```pam
 # Try PIN first, fallback to other methods
-auth    optional    pam_pinlock.so
+auth    sufficient    pam_pinlock.so
 # ... existing auth modules
 ```
 
