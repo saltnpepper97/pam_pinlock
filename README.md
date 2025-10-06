@@ -1,12 +1,12 @@
 # 🔒 pam_pinlock
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/saltnpepper97/pam_pinlock)
-[![Language: C](https://img.shields.io/badge/language-C-blue.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
-[![PAM Compatible](https://img.shields.io/badge/PAM-compatible-orange.svg)](https://linux.die.net/man/8/pam)
-[![Hyprland](https://img.shields.io/badge/Hyprland-supported-purple.svg)](https://hyprland.org/)
-[![Security](https://img.shields.io/badge/security-Argon2-red.svg)](https://github.com/P-H-C/phc-winner-argon2)
-[![AUR](https://img.shields.io/badge/AUR-available-blue.svg)](https://aur.archlinux.org/packages/pam-pinlock)
+<div align="center">
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT">
+  <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build Status">
+  <img src="https://img.shields.io/badge/PAM-compatible-orange?style=for-the-badge" alt="PAM Compatible">
+  <img src="https://img.shields.io/badge/Hyprland-supported-purple?style=for-the-badge" alt="Hyprland">
+  <img src="https://img.shields.io/badge/security-Argon2-red?style=for-the-badge" alt="Security">
+  <img src="https://img.shields.io/badge/AUR-available-blue?style=for-the-badge" alt="AUR">
+</div>
 
 > A secure, feature-rich PIN-based authentication module for Linux with rate limiting, account lockout protection, and comprehensive configuration options. Perfect for Hyprland's hyprlock and system-wide authentication.
 
