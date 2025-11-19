@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <unistd.h>
 #include <argon2.h>
 #include <syslog.h>
@@ -30,6 +29,7 @@ typedef struct {
     int log_success;
     int log_failures;
     int debug;
+    int local_retries;  // NEW: number of retries within this PAM call
 } pinlock_config_t;
 
 // Rate limiting structure
@@ -84,6 +84,7 @@ static void load_default_config(pinlock_config_t *config) {
     config->log_success = 1;
     config->log_failures = 1;
     config->debug = 0;
+    config->local_retries = 3;  // NEW: default to 3 attempts
 }
 
 static int parse_bool(const char *value) {
@@ -133,6 +134,7 @@ static void load_config_file(const char *path, pinlock_config_t *config) {
         else if (strcmp(key, "log_success") == 0) config->log_success = parse_bool(value);
         else if (strcmp(key, "log_failures") == 0) config->log_failures = parse_bool(value);
         else if (strcmp(key, "debug") == 0) config->debug = parse_bool(value);
+        else if (strcmp(key, "local_retries") == 0) config->local_retries = atoi(value);  // NEW
     }
     
     fclose(f);
@@ -158,6 +160,7 @@ static void parse_args(int argc, const char **argv, const char **prompt, pinlock
     for(int i=0;i<argc;i++) {
         if(strncmp(argv[i],"prompt=",7)==0) *prompt=argv[i]+7;
         else if(strcmp(argv[i],"debug")==0) config->debug=1;
+        else if(strncmp(argv[i],"retries=",8)==0) config->local_retries=atoi(argv[i]+8);  // NEW
     }
 }
 
@@ -362,45 +365,85 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
         return PAM_AUTH_ERR; 
     }
     
-    char *pin=NULL;
-    int pr=prompt_pin(pamh,prompt,&pin);
-    if(pr!=PAM_SUCCESS) { 
-        pam_syslog(pamh,LOG_ERR,"pinlock: failed to prompt for PIN for user %s",user);
-        free(encoded); 
-        return PAM_AUTH_ERR; 
-    }
+    // NEW: Retry loop - prompt multiple times before failing
+    int attempts = 0;
+    int max_local_attempts = config.local_retries > 0 ? config.local_retries : 1;
     
-    // Validate PIN format
-    if (!validate_pin(pin, &config)) {
-        if (config.log_failures) {
-            pam_syslog(pamh,LOG_WARNING,"pinlock: invalid PIN format for user %s",user);
-        }
-        memwipe(pin,strlen(pin));
-        free(pin); free(encoded);
-        check_rate_limit(pamh, user, dir, &config, 0); // Record failed attempt
-        return PAM_AUTH_ERR;
-    }
-    
-    int v=argon2id_verify(encoded,pin,strlen(pin));
-    memwipe(pin,strlen(pin));
-    free(pin); free(encoded);
-    
-    if(v==ARGON2_OK) { 
-        // Success - reset rate limiting
-        check_rate_limit(pamh, user, dir, &config, 1);
+    for (attempts = 0; attempts < max_local_attempts; attempts++) {
+        char *pin=NULL;
         
-        if(config.log_success) {
-            pam_syslog(pamh,LOG_INFO,"pinlock: successful authentication for user %s",user);
+        // Show attempt number if more than 1 attempt allowed
+        char retry_prompt[256];
+        if (max_local_attempts > 1) {
+            snprintf(retry_prompt, sizeof(retry_prompt), "%s (attempt %d/%d): ", 
+                    prompt, attempts + 1, max_local_attempts);
+        } else {
+            snprintf(retry_prompt, sizeof(retry_prompt), "%s", prompt);
         }
-        return PAM_SUCCESS; 
+        
+        int pr=prompt_pin(pamh, retry_prompt, &pin);
+        if(pr!=PAM_SUCCESS) { 
+            pam_syslog(pamh,LOG_ERR,"pinlock: failed to prompt for PIN for user %s",user);
+            free(encoded); 
+            return PAM_AUTH_ERR; 
+        }
+        
+        // Validate PIN format
+        if (!validate_pin(pin, &config)) {
+            if (config.log_failures) {
+                pam_syslog(pamh,LOG_WARNING,"pinlock: invalid PIN format for user %s (attempt %d/%d)",
+                          user, attempts + 1, max_local_attempts);
+            }
+            memwipe(pin,strlen(pin));
+            free(pin);
+            
+            // Check if this was the last attempt
+            if (attempts + 1 >= max_local_attempts) {
+                check_rate_limit(pamh, user, dir, &config, 0); // Record failed attempt
+                free(encoded);
+                return PAM_AUTH_ERR;
+            }
+            
+            // Show error message and continue to next attempt
+            pam_info(pamh, "Invalid PIN format. Please try again.");
+            continue;
+        }
+        
+        // Verify PIN
+        int v=argon2id_verify(encoded,pin,strlen(pin));
+        memwipe(pin,strlen(pin));
+        free(pin);
+        
+        if(v==ARGON2_OK) { 
+            // Success - reset rate limiting
+            check_rate_limit(pamh, user, dir, &config, 1);
+            
+            if(config.log_success) {
+                pam_syslog(pamh,LOG_INFO,"pinlock: successful authentication for user %s",user);
+            }
+            free(encoded);
+            return PAM_SUCCESS; 
+        }
+        
+        // Failed verification
+        if(config.log_failures) {
+            pam_syslog(pamh,LOG_WARNING,"pinlock: authentication failed for user %s (attempt %d/%d, argon2 error %d)",
+                      user, attempts + 1, max_local_attempts, v);
+        }
+        
+        // Check if this was the last attempt
+        if (attempts + 1 >= max_local_attempts) {
+            check_rate_limit(pamh, user, dir, &config, 0); // Record failed attempt
+            free(encoded);
+            return PAM_AUTH_ERR;
+        }
+        
+        // Show error message and continue to next attempt
+        pam_info(pamh, "Incorrect PIN. Please try again.");
     }
     
-    // Failed verification - update rate limiting
-    check_rate_limit(pamh, user, dir, &config, 0);
-    
-    if(config.log_failures) {
-        pam_syslog(pamh,LOG_WARNING,"pinlock: authentication failed for user %s (argon2 error %d)",user,v);
-    }
+    // Should not reach here, but just in case
+    free(encoded);
     return PAM_AUTH_ERR;
 }
 
