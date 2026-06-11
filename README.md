@@ -18,7 +18,7 @@
 - 🔐 **Secure PIN Authentication** — Fast, memorable authentication with enterprise-grade security
 - 🏋️ **Argon2id Hashing** — Industry-standard password hashing with unique salts per user
 - 🛑 **Rate Limiting** — Built-in brute force protection with configurable attempt limits
-- 🔒 **Account Lockout** — Optional temporary account lockout (disabled by default)
+- 🔒 **PIN Lockout** — Optional temporary PIN lockout with configurable PAM failure behavior
 - ⚙️ **Flexible Configuration** — System-wide and per-user configuration files
 - 🎛️ **Advanced PIN Requirements** — Configurable length limits and character validation
 - 📊 **Comprehensive Logging** — Detailed syslog integration with configurable verbosity
@@ -125,6 +125,15 @@ sudo nano /etc/pinlock.conf
 
 **Configuration Options:**
 ```ini
+# PIN Storage
+# Leave unset to use ~/.pinlock for each user
+# Use an absolute root-managed directory for polkit or other root helper services
+# pin_dir=/var/lib/pinlock
+
+# User Configuration
+# Disabled by default so user config cannot weaken system policy
+allow_user_config=no
+
 # PIN Requirements
 min_length=6                 # Minimum PIN length
 max_length=32               # Maximum PIN length  
@@ -135,10 +144,10 @@ max_attempts=5              # Max attempts before rate limiting
 rate_limit_window=60        # Time window in seconds
 lockout_window=300          # How long to wait after rate limit
 
-# Account Lockout (disabled by default)
-enable_lockout=no           # Enable permanent lockout
+# PIN Lockout (disabled by default)
+enable_lockout=no           # Enable temporary PIN lockout
 lockout_duration=900        # Lockout duration in seconds
-max_lockout_attempts=3      # Attempts before lockout
+lockout_fails_auth=no       # If yes, lockout returns PAM_AUTH_ERR instead of fallback
 
 # Logging
 log_attempts=yes            # Log all authentication attempts
@@ -149,7 +158,7 @@ debug=no                    # Enable debug logging
 
 ### 🔐 User-Specific Configuration
 
-Users can override settings in `~/.pinlock/pinlock.conf`:
+User-specific config is disabled by default so users cannot weaken system authentication policy. Administrators can enable it with `allow_user_config=yes`, after which users can override settings in `~/.pinlock/pinlock.conf`:
 ```bash
 mkdir -p ~/.pinlock
 cp /etc/pinlock/examples/pinlock.conf ~/.pinlock/pinlock.conf
@@ -178,6 +187,30 @@ auth    sufficient  pam_pinlock.so prompt="Admin PIN: "
 auth    include     system-auth
 ```
 
+**For polkit/KDE authentication prompts** (`/etc/pam.d/polkit-1`):
+```pam
+#%PAM-1.0
+auth       sufficient   pam_pinlock.so prompt="PIN: "
+auth       include      system-auth
+account    include      system-auth
+password   include      system-auth
+session    include      system-auth
+```
+
+For polkit, a system PIN directory is recommended so the polkit helper can resolve the same PIN files as `pinlockctl`:
+```bash
+sudo install -d -m 700 /var/lib/pinlock
+sudo nano /etc/pinlock.conf  # Set pin_dir=/var/lib/pinlock
+sudo pinlockctl set alice
+sudo pinlockctl check alice
+```
+
+If polkit still falls back to password auth, temporarily enable `debug=yes` in `/etc/pinlock.conf` or add `debug` to the PAM line, then check the logged PIN path with:
+```bash
+journalctl -b | grep pinlock
+```
+Remove `debug` again after testing.
+
 ---
 
 ## 🎮 Usage
@@ -197,6 +230,9 @@ pinlockctl status [username]
 # View current configuration
 pinlockctl config [username]
 # Shows complete config including requirements and security settings
+
+# Check storage path, ownership, and permissions
+pinlockctl check alice
 
 # Clear rate limiting/unlock user
 pinlockctl unlock alice
@@ -242,14 +278,15 @@ PIN (alice): ●●●●●●
 
 ### 🚫 Brute Force Protection  
 - **Rate limiting** with configurable attempt windows
-- **Exponential backoff** after failed attempts
-- **Optional account lockout** for persistent attackers
+- **Optional temporary PIN lockout** for repeated failures
+- **Configurable PAM behavior** during PIN lockout: fallback or authentication failure
 - **Detailed logging** of all authentication attempts
 
 ### 📁 Secure Storage
 - **Protected file permissions** (0600) for PIN files
-- **User-specific directories** (`~/.pinlock/`)
-- **Atomic file operations** to prevent corruption
+- **User-specific directories** (`~/.pinlock/`) or root-managed system storage (`/var/lib/pinlock`)
+- **Atomic PIN file writes** to prevent corruption
+- **Ownership, permission, and symlink checks** before authentication
 - **No plaintext storage** — PINs never stored in readable form
 
 ### 🔍 Audit Trail
@@ -310,6 +347,10 @@ find /lib* /usr/lib* -name "pam_unix.so" -exec dirname {} \;
 # Ensure proper permissions
 chmod 700 ~/.pinlock/
 chmod 600 ~/.pinlock/*.pin
+
+# For system storage used by polkit
+sudo install -d -m 700 /var/lib/pinlock
+sudo pinlockctl check $USER
 ```
 
 **Rate limiting activated:**
