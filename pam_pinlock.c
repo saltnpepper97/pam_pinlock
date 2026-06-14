@@ -211,13 +211,18 @@ static void load_config(const char *user, pinlock_config_t *config) {
 }
 
 // Parse module args
-static void parse_args(int argc, const char **argv, const char **prompt, pinlock_config_t *config) {
+static void parse_args(int argc, const char **argv, const char **prompt, int *retries, pinlock_config_t *config) {
     *prompt = NULL;
+    *retries = 1;
     for(int i=0;i<argc;i++) {
         if(strncmp(argv[i],"prompt=",7)==0) *prompt=argv[i]+7;
         else if(strncmp(argv[i],"pin_dir=",8)==0) {
             const char *dir = argv[i]+8;
             if (!*dir || *dir == '/') snprintf(config->pin_dir, sizeof(config->pin_dir), "%s", dir);
+        }
+        else if(strncmp(argv[i],"retries=",8)==0) {
+            int parsed = 0;
+            if (parse_int_range(argv[i]+8, 1, 50, &parsed)) *retries = parsed;
         }
         else if(strcmp(argv[i],"debug")==0) config->debug=1;
     }
@@ -251,8 +256,9 @@ static int lockout_result(const pinlock_config_t *config) {
 static int check_pin_dir(pam_handle_t *pamh, const char *dir, const struct passwd *pw, const pinlock_config_t *config) {
     struct stat st;
     if (lstat(dir, &st) != 0) {
-        if (errno == ENOENT) return PAM_IGNORE;
-        if (config->debug) pam_syslog(pamh, LOG_WARNING, "pinlock: cannot stat PIN directory %s", dir);
+        int saved_errno = errno;
+        if (saved_errno == ENOENT) return PAM_IGNORE;
+        if (config->debug) pam_syslog(pamh, LOG_WARNING, "pinlock: cannot stat PIN directory %s: %s", dir, strerror(saved_errno));
         return PAM_AUTH_ERR;
     }
 
@@ -282,8 +288,9 @@ static int check_pin_dir(pam_handle_t *pamh, const char *dir, const struct passw
 static int check_pin_file(pam_handle_t *pamh, const char *path, const struct passwd *pw, const pinlock_config_t *config) {
     struct stat st;
     if (lstat(path, &st) != 0) {
-        if (errno == ENOENT) return PAM_IGNORE;
-        if (config->debug) pam_syslog(pamh, LOG_WARNING, "pinlock: cannot stat PIN file %s", path);
+        int saved_errno = errno;
+        if (saved_errno == ENOENT) return PAM_IGNORE;
+        if (config->debug) pam_syslog(pamh, LOG_WARNING, "pinlock: cannot stat PIN file %s: %s", path, strerror(saved_errno));
         return PAM_AUTH_ERR;
     }
 
@@ -414,7 +421,8 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
     load_config(user, &config);
 
     const char *prompt = NULL;
-    parse_args(argc, argv, &prompt, &config);
+    int retries = 1;
+    parse_args(argc, argv, &prompt, &retries, &config);
     if (!prompt) prompt = "PIN: ";
 
     const char *dir = get_pinlock_dir(user, &config);
@@ -441,7 +449,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
     }
 
     int attempt;
-    for (attempt = 0; attempt < config.max_attempts; ++attempt) {
+    for (attempt = 0; attempt < retries; ++attempt) {
         rate_limit_t rl;
         load_rate_limit(rl_path, &rl);
         time_t now = time(NULL);
@@ -470,7 +478,6 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
         if (!validate_pin(pin, &config)) {
             memwipe(pin, strlen(pin));
             free(pin);
-            check_rate_limit(pamh, user, dir, &config, 0);
             continue; // re-prompt
         }
 
@@ -495,8 +502,8 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
         check_rate_limit(pamh, user, dir, &config, 0);
         if (config.log_failures)
             pam_syslog(pamh, LOG_WARNING,
-                       "pinlock: PIN incorrect for user %s, attempt %d/%d",
-                       user, attempt + 1, config.max_attempts);
+                       "pinlock: PIN incorrect for user %s, local attempt %d/%d",
+                       user, attempt + 1, retries);
     }
 
     // By default, PIN exhaustion falls back to the next PAM method.

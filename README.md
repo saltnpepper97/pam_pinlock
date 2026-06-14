@@ -127,7 +127,8 @@ sudo nano /etc/pinlock.conf
 ```ini
 # PIN Storage
 # Leave unset to use ~/.pinlock for each user
-# Use an absolute root-managed directory for polkit or other root helper services
+# Global pin_dir affects every PAM service. On mixed desktop systems, prefer
+# setting pin_dir= on individual PAM lines for sudo/polkit instead.
 # pin_dir=/var/lib/pinlock
 
 # User Configuration
@@ -167,42 +168,66 @@ nano ~/.pinlock/pinlock.conf
 
 ### 🛡️ PAM Integration
 
+`pam_pinlock` supports two storage trust modes:
+
+- `~/.pinlock` is the default same-user convenience store. Use it for screen lockers such as hyprlock or KDE lockscreen, where the PAM module runs as the user.
+- `/var/lib/pinlock` is a root-managed system store. Use it for root/helper services such as sudo, polkit, or SDDM. Do not make it group/world accessible.
+
+Avoid setting `pin_dir=/var/lib/pinlock` globally in `/etc/pinlock.conf` on mixed desktop systems. It can break user-run screen lockers because they cannot read a root-owned `0700` system directory. Prefer setting `pin_dir=` on the specific PAM services that need system storage.
+
+`retries=1` is recommended for fallback stacks so typing a password at the PIN prompt falls through quickly to the next PAM method.
+
 **For Hyprland hyprlock** (`/etc/pam.d/hyprlock`):
 ```pam
 #%PAM-1.0
-auth    sufficient  pam_pinlock.so
+auth    sufficient  pam_pinlock.so retries=1
 auth    include     system-auth
+```
+
+**For KDE lockscreen** (`/etc/pam.d/kde`):
+```pam
+#%PAM-1.0
+auth    sufficient  pam_pinlock.so retries=1
+auth    include     system-local-login
+account include     system-local-login
+password include    system-local-login
+session include     system-local-login
 ```
 
 **For system-wide authentication** (`/etc/pam.d/common-auth` or `/etc/pam.d/system-auth`):
 ```pam
 # Try PIN first, fallback to other methods
-auth    sufficient    pam_pinlock.so
+auth    sufficient    pam_pinlock.so retries=1
 # ... existing auth modules
 ```
 
 **For sudo with custom prompt** (`/etc/pam.d/sudo`):
 ```pam
-auth    sufficient  pam_pinlock.so prompt="Admin PIN: "
+auth    sufficient  pam_pinlock.so pin_dir=/var/lib/pinlock prompt="Admin PIN: " retries=1
 auth    include     system-auth
 ```
 
-**For polkit/KDE authentication prompts** (`/etc/pam.d/polkit-1`):
+**For polkit authentication prompts** (`/etc/pam.d/polkit-1`):
 ```pam
 #%PAM-1.0
-auth       sufficient   pam_pinlock.so prompt="PIN: "
+auth       sufficient   pam_pinlock.so pin_dir=/var/lib/pinlock prompt="PIN: " retries=1
 auth       include      system-auth
 account    include      system-auth
 password   include      system-auth
 session    include      system-auth
 ```
 
-For polkit, a system PIN directory is recommended so the polkit helper can resolve the same PIN files as `pinlockctl`:
+For sudo/polkit, create a root-managed system PIN directory and enroll after choosing that storage path:
 ```bash
 sudo install -d -m 700 /var/lib/pinlock
-sudo nano /etc/pinlock.conf  # Set pin_dir=/var/lib/pinlock
-sudo pinlockctl set alice
-sudo pinlockctl check alice
+sudo pinlockctl --pin-dir /var/lib/pinlock set alice
+sudo pinlockctl --pin-dir /var/lib/pinlock check alice
+```
+
+If you also use user-run screen lockers, do not leave global `pin_dir=/var/lib/pinlock` enabled in `/etc/pinlock.conf`. Enroll a per-user PIN for lockscreen use after removing the global `pin_dir`:
+```bash
+pinlockctl set alice
+pinlockctl check alice
 ```
 
 If polkit still falls back to password auth, temporarily enable `debug=yes` in `/etc/pinlock.conf` or add `debug` to the PAM line, then check the logged PIN path with:
@@ -233,6 +258,10 @@ pinlockctl config [username]
 
 # Check storage path, ownership, and permissions
 pinlockctl check alice
+
+# Manage a root-owned system store without changing global config
+sudo pinlockctl --pin-dir /var/lib/pinlock set alice
+sudo pinlockctl --pin-dir /var/lib/pinlock check alice
 
 # Clear rate limiting/unlock user
 pinlockctl unlock alice
@@ -289,6 +318,8 @@ PIN (alice): ●●●●●●
 - **Ownership, permission, and symlink checks** before authentication
 - **No plaintext storage** — PINs never stored in readable form
 
+Per-user storage is user-controlled and is intended for same-user convenience unlock. Do not use it to authorize privilege escalation through sudo or polkit. Use a root-managed system store for those services.
+
 ### 🔍 Audit Trail
 - **Comprehensive syslog integration**
 - **Success/failure logging** with timestamps
@@ -302,14 +333,26 @@ PIN (alice): ●●●●●●
 ### Multiple Authentication Methods
 ```pam
 # /etc/pam.d/login - Try PIN, fallback to password
-auth    sufficient  pam_pinlock.so
+auth    sufficient  pam_pinlock.so retries=1
 auth    required    pam_unix.so
+```
+
+### Local Retries
+```pam
+# Prompt once per PAM transaction, then fall through to the next auth method.
+auth    sufficient  pam_pinlock.so retries=1
+```
+
+### Per-Service PIN Storage
+```pam
+# Use root-managed storage for this PAM service only.
+auth    sufficient  pam_pinlock.so pin_dir=/var/lib/pinlock retries=1
 ```
 
 ### Custom Prompts
 ```pam
-auth    sufficient  pam_pinlock.so prompt="Secure PIN: "
-auth    sufficient  pam_pinlock.so prompt="PIN for %u: "
+auth    sufficient  pam_pinlock.so prompt="Secure PIN: " retries=1
+auth    sufficient  pam_pinlock.so prompt="PIN for %u: " retries=1
 ```
 
 ### Debug Mode
@@ -348,10 +391,13 @@ find /lib* /usr/lib* -name "pam_unix.so" -exec dirname {} \;
 chmod 700 ~/.pinlock/
 chmod 600 ~/.pinlock/*.pin
 
-# For system storage used by polkit
+# For system storage used by sudo/polkit
 sudo install -d -m 700 /var/lib/pinlock
-sudo pinlockctl check $USER
+sudo pinlockctl --pin-dir /var/lib/pinlock check $USER
 ```
+
+**KDE lockscreen cannot read `/var/lib/pinlock`:**
+KDE lockscreen can run as the user, so it cannot read a root-owned `0700` system store. Keep KDE/hyprlock on the default `~/.pinlock` store, and set `pin_dir=/var/lib/pinlock` only on root/helper services such as sudo or polkit.
 
 **Rate limiting activated:**
 ```bash

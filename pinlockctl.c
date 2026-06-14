@@ -33,7 +33,9 @@ typedef struct {
 static void die(const char *msg) { perror(msg); exit(1); }
 
 static void usage(const char *prog) {
-    printf("Usage: %s <command> [username]\n", prog);
+    printf("Usage: %s [--pin-dir DIR] <command> [username]\n", prog);
+    printf("Options:\n");
+    printf("  --pin-dir DIR   Override PIN storage directory for this command\n");
     printf("Commands:\n");
     printf("  enroll, set    Set a new PIN for the user\n");
     printf("  remove         Remove the PIN for the user\n");
@@ -45,8 +47,8 @@ static void usage(const char *prog) {
     exit(0);
 }
 
-static char *get_username(int argc, char **argv) {
-    if (argc >= 3 && argv[2] && *argv[2]) return strdup(argv[2]);
+static char *get_username(int argc, char **argv, int cmd_index) {
+    if (argc > cmd_index + 1 && argv[cmd_index + 1] && *argv[cmd_index + 1]) return strdup(argv[cmd_index + 1]);
 
     char buf[128];
     fprintf(stderr, "Enter username: ");
@@ -391,36 +393,33 @@ static int show_storage_check(const char *user, const char *dir, const char *pat
     return dir_status == 1 || file_status == 1;
 }
 
-static void show_config(const char *user) {
-    pinlock_config_t config;
-    load_config(user, &config);
-    
+static void show_config(const char *user, const pinlock_config_t *config) {
     printf("Configuration for user '%s':\n", user);
     printf("  PIN Storage:\n");
-    printf("    Directory: %s\n", config.pin_dir[0] ? config.pin_dir : "~/.pinlock");
+    printf("    Directory: %s\n", config->pin_dir[0] ? config->pin_dir : "~/.pinlock");
 
     printf("  PIN Requirements:\n");
-    printf("    Minimum length: %d\n", config.min_length);
-    printf("    Maximum length: %d\n", config.max_length);
-    printf("    Digits only: %s\n", config.require_digits_only ? "yes" : "no");
+    printf("    Minimum length: %d\n", config->min_length);
+    printf("    Maximum length: %d\n", config->max_length);
+    printf("    Digits only: %s\n", config->require_digits_only ? "yes" : "no");
     
     printf("  Rate Limiting:\n");
-    printf("    Max attempts: %d\n", config.max_attempts);
-    printf("    Rate limit window: %d seconds\n", config.rate_limit_window);
-    printf("    Cooldown after rate limit: %d seconds\n", config.lockout_window);
+    printf("    Max attempts: %d\n", config->max_attempts);
+    printf("    Rate limit window: %d seconds\n", config->rate_limit_window);
+    printf("    Cooldown after rate limit: %d seconds\n", config->lockout_window);
     
     printf("  PIN Lockout:\n");
-    printf("    Enabled: %s\n", config.enable_lockout ? "yes" : "no");
-    printf("    Lockout duration: %d seconds\n", config.lockout_duration);
+    printf("    Enabled: %s\n", config->enable_lockout ? "yes" : "no");
+    printf("    Lockout duration: %d seconds\n", config->lockout_duration);
     
     printf("  Logging:\n");
-    printf("    Log attempts: %s\n", config.log_attempts ? "yes" : "no");
-    printf("    Log success: %s\n", config.log_success ? "yes" : "no");
-    printf("    Log failures: %s\n", config.log_failures ? "yes" : "no");
-    printf("    Debug: %s\n", config.debug ? "yes" : "no");
+    printf("    Log attempts: %s\n", config->log_attempts ? "yes" : "no");
+    printf("    Log success: %s\n", config->log_success ? "yes" : "no");
+    printf("    Log failures: %s\n", config->log_failures ? "yes" : "no");
+    printf("    Debug: %s\n", config->debug ? "yes" : "no");
     printf("  Policy:\n");
-    printf("    User config overrides: %s\n", config.allow_user_config ? "yes" : "no");
-    printf("    PIN lockout fails auth: %s\n", config.lockout_fails_auth ? "yes" : "no");
+    printf("    User config overrides: %s\n", config->allow_user_config ? "yes" : "no");
+    printf("    PIN lockout fails auth: %s\n", config->lockout_fails_auth ? "yes" : "no");
 }
 
 static void unlock_user(const char *user, const char *dir) {
@@ -441,17 +440,52 @@ static void unlock_user(const char *user, const char *dir) {
 int main(int argc, char **argv) {
     if (argc < 2) usage(argv[0]);
 
-    const char *cmd = argv[1];
+    const char *pin_dir_override = NULL;
+    int cmd_index = 1;
+    while (cmd_index < argc) {
+        if (strcmp(argv[cmd_index], "--pin-dir") == 0) {
+            if (cmd_index + 1 >= argc) {
+                fprintf(stderr, "--pin-dir requires an absolute directory path\n");
+                return 2;
+            }
+            pin_dir_override = argv[cmd_index + 1];
+            cmd_index += 2;
+            continue;
+        }
+        if (strncmp(argv[cmd_index], "--pin-dir=", 10) == 0) {
+            pin_dir_override = argv[cmd_index] + 10;
+            cmd_index++;
+            continue;
+        }
+        break;
+    }
+
+    if (cmd_index >= argc) usage(argv[0]);
+
+    const char *cmd = argv[cmd_index];
     if (strcmp(cmd, "help") == 0) usage(argv[0]);
 
-    char *user = get_username(argc, argv);
+    if (pin_dir_override && (!*pin_dir_override || *pin_dir_override != '/')) {
+        fprintf(stderr, "--pin-dir requires an absolute directory path\n");
+        return 2;
+    }
+
+    char *user = get_username(argc, argv, cmd_index);
     if (!user) die("No username provided");
 
     pinlock_config_t config;
     load_config(user, &config);
+    if (pin_dir_override) {
+        int n = snprintf(config.pin_dir, sizeof(config.pin_dir), "%s", pin_dir_override);
+        if (n < 0 || n >= (int)sizeof(config.pin_dir)) {
+            fprintf(stderr, "--pin-dir path is too long\n");
+            free(user);
+            return 2;
+        }
+    }
 
     if (!strcmp(cmd, "config")) {
-        show_config(user);
+        show_config(user, &config);
         free(user);
         return 0;
     }
