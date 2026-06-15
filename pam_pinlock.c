@@ -80,7 +80,18 @@ static int file_exists(const char *path) {
 // Prompt user for PIN
 static int prompt_pin(pam_handle_t *pamh, const char *prompt, char **out_pin) {
     *out_pin=NULL;
-    int r=pam_prompt(pamh,PAM_PROMPT_ECHO_OFF,out_pin,"%s",prompt?prompt:"PIN: ");
+    const char *display_prompt = prompt ? prompt : "PIN: ";
+    size_t display_len = strlen(display_prompt);
+
+    if (display_len > 0 && (display_prompt[0] == '"' || display_prompt[0] == '\'')) {
+        char quote = display_prompt[0];
+        display_prompt++;
+        display_len--;
+        if (display_len > 0 && display_prompt[display_len - 1] == quote) display_len--;
+    }
+    if (display_len > INT_MAX) display_len = INT_MAX;
+
+    int r=pam_prompt(pamh,PAM_PROMPT_ECHO_OFF,out_pin,"%.*s",(int)display_len,display_prompt);
     return (r==PAM_SUCCESS && *out_pin)?PAM_SUCCESS:PAM_AUTH_ERR;
 }
 
